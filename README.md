@@ -24,7 +24,7 @@ Nusantara Hybrid POS is a complete, production-ready restaurant & café operatio
 - **Real-Time AI Upsell & Business Insights**: Gemini-powered upsell recommendations, procurement advisor, and persuasive WhatsApp promo copywriting generator.
 - **On-Device & Cloud Resilience**: Instant local parsing when offline, paired with cloud Gemini intelligence when connected.
 
-### 3. Automated WhatsApp Notifications & Fonnte Channel Pairing
+### 3. Automated WhatsApp Notifications & Channel Pairing
 - **Automated Kitchen Reminders**: Automatically dispatches WhatsApp messages via **Fonnte** or **Meta WABA** with the customer's exact **Queue Number** when their order is cooking or ready for pickup.
 - **In-App Channel Pairing**: Built-in **Scan QR Code** and **8-Digit Pairing Code** setup directly inside **Settings** for quick Fonnte device linking, plus an offline message outbox that auto-sends upon reconnection.
 
