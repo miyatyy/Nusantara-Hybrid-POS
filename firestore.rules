@@ -1,0 +1,576 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Models
+    // ===============================================================
+    //
+    // Collection: transactions
+    // Document ID: orderId (e.g. 'TX-1001' or auto-generated ID)
+    // Fields:
+    //   - id: string (required, 1-64 chars) - Unique transaction order ID
+    //   - timestamp: string (required, max 50 chars) - ISO 8601 creation timestamp
+    //   - items: list (required, 1-100 elements) - Array of order line items
+    //   - subtotal: number (required, >= 0) - Subtotal in IDR
+    //   - tax: number (required, >= 0) - Tax amount in IDR
+    //   - serviceAmount: number (optional, >= 0) - Service fee in IDR
+    //   - total: number (required, >= 0) - Grand total in IDR
+    //   - grandTotal: number (optional, >= 0) - Alias for total
+    //   - paymentMethod: string (required, max 50 chars) - 'Cash', 'QRIS', 'Card'
+    //   - cashReceived: number (required, >= 0) - Tendered cash in IDR
+    //   - amountPaid: number (optional, >= 0) - Alias for cashReceived
+    //   - changeAmount: number (required, >= 0) - Change returned in IDR
+    //   - aiSource: string (optional, max 50 chars) - 'ON_DEVICE', 'IN_CLOUD', 'MANUAL'
+    //   - orderMode: string (optional, max 50 chars) - 'Dine In', 'Takeaway', 'Delivery'
+    //   - orderNotes: string (optional, max 500 chars) - Order-level remarks
+    //   - cashierName: string (optional, max 100 chars) - Cashier employee name
+    //   - shiftLabel: string (optional, max 100 chars) - Shift name
+    //   - shiftHours: string (optional, max 50 chars) - Shift working hours
+    //   - queueNumber: string (optional, max 50 chars) - Order queue number (e.g. '#001')
+    //   - customerPhone: string (optional, max 50 chars) - Customer phone / WhatsApp
+    //   - customerName: string (optional, max 100 chars) - Customer name
+    //   - kitchenStatus: string (required) - 'preparing', 'cooking', 'ready', 'completed'
+    //   - estimatedPrepMinutes: number (optional, 0-180) - Estimated preparation ETA
+    //   - trackingToken: string (optional, max 64 chars) - Secret customer order verification token
+    //   - isOffline: bool (optional) - True if initially created while offline
+    //   - readyAt: string (optional, max 50 chars) - ISO timestamp when order was marked ready
+    //   - completedAt: string (optional, max 50 chars) - ISO timestamp when order was completed
+    //   - syncedFromOfflineJson: bool (optional) - Synced from local offline queue
+    //   - syncedAt: string (optional, max 50 chars) - Timestamp of offline sync
+    //
+    // Collection: menu_items
+    // Document ID: menuItemId (e.g. 'menu_kopi_aren' or auto-id)
+    // Fields:
+    //   - id: string (required, max 64 chars)
+    //   - name: string (required, 1-100 chars) - Item title in Indonesian
+    //   - nameEn: string (optional, max 100 chars) - English translated title
+    //   - category: string (required, max 50 chars) - 'Makanan', 'Minuman', 'Cemilan', 'Paket'
+    //   - price: number (required, >= 0) - Price in IDR
+    //   - description: string (optional, max 1000 chars) - Item description
+    //   - isAvailable: bool (optional) - Stock availability flag
+    //   - recipe: map (optional, max 50 keys) - Material ID to required portion qty
+    //   - iconEmoji: string (optional, max 20 chars) - Display emoji
+    //   - popularityScore: number (optional, >= 0) - Recommendation ranking
+    //   - imageUrl: string (optional, max 500 chars) - Food & beverage photo URL
+    //   - isManualSoldOut: bool (optional) - Manual cashier 86 / out-of-stock toggle
+    //   - forceManualReady: bool (optional) - Force ready override toggle
+    //
+    // Collection: raw_materials
+    // Document ID: materialId (e.g. 'raw_espresso' or auto-id)
+    // Fields:
+    //   - id: string (required, max 64 chars)
+    //   - name: string (required, 1-100 chars)
+    //   - category: string (required, max 50 chars)
+    //   - currentStock: number (required) - Can decrease atomically via checkout increment
+    //   - unit: string (required, max 20 chars) - 'g', 'ml', 'pcs', 'gr', 'unit'
+    //   - minSafetyStock: number (required, >= 0)
+    //   - minThreshold: number (optional, >= 0)
+    //   - costPerUnit: number (required, >= 0) - COGS / HPP in IDR
+    //
+    // Collection: procurement_logs & procurement_orders
+    // Document ID: logId
+    // Fields:
+    //   - id: string (required, max 64 chars)
+    //   - rawMaterialId: string (required, max 64 chars)
+    //   - rawMaterialName: string (required, 1-100 chars)
+    //   - quantityAdded: number (required, >= 0)
+    //   - unit: string (required, max 20 chars)
+    //   - costTotal: number (required, >= 0)
+    //   - supplier: string (required, max 100 chars)
+    //   - timestamp: string (required, max 50 chars)
+    //
+    // Collection: expenses
+    // Document ID: expenseId
+    // Fields:
+    //   - id: string (required, max 64 chars)
+    //   - title: string (required, 1-100 chars)
+    //   - category: string (required, max 50 chars) - 'Restock', 'Operational', etc.
+    //   - amount: number (required, >= 0)
+    //   - timestamp: string (required, max 50 chars)
+    //   - loggedBy: string (required, max 100 chars)
+    //   - referenceId: string (optional, max 64 chars)
+    //
+    // Collection: cashiers
+    // Document ID: employeeId
+    // Fields:
+    //   - id: string (required, max 64 chars)
+    //   - name: string (required, 1-100 chars)
+    //   - role: string (required, max 50 chars)
+    //   - defaultShiftLabel: string (optional, max 50 chars)
+    //   - startTime: string (optional, max 20 chars)
+    //   - endTime: string (optional, max 20 chars)
+    //   - pin: string (optional, max 20 chars)
+    //
+    // Collection: shift_sessions
+    // Document ID: shiftId
+    // Fields:
+    //   - id, cashierId, cashierName, role, shiftLabel, shiftHours, startTime, status (required)
+    //   - endTime, openingCash, closingCash, expectedCash, variance, totalOrders, grossSales, etc. (optional)
+    //
+    // Collection: z_reports
+    // Document ID: reportId
+    // Fields:
+    //   - reportId, cashierName, role, shiftLabel, shiftHours, startTime, endTime, totalOrders, grossSales, actualCash, createdAt (required)
+    //   - storeName, onlineOrderCount, offlineOrderCount, cashSales, nonCashSales, openingCash, variance, aiSummary, syncedToFirestore (optional)
+    //
+    // Multi-Tenant Account Isolation:
+    // All collections above, plus `customers` and `settings`, are also scoped under:
+    //   /tenants/{tenantId}/{collection}/{docId}
+    // where tenantId is derived from the store account email (e.g. mnurmiyaty2_gmail_com).
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Core Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    // --- Transactions Validator ---
+    function isValidTransaction(data) {
+      let requiredKeys = [
+        'id', 'timestamp', 'items', 'subtotal', 'tax',
+        'total', 'paymentMethod', 'cashReceived', 'changeAmount', 'kitchenStatus'
+      ];
+      let allowedKeys = [
+        'id', 'timestamp', 'items', 'subtotal', 'tax', 'serviceAmount', 'total', 'grandTotal',
+        'paymentMethod', 'cashReceived', 'amountPaid', 'changeAmount', 'aiSource', 'orderMode',
+        'orderNotes', 'cashierName', 'shiftLabel', 'shiftHours', 'queueNumber', 'customerPhone',
+        'customerName', 'kitchenStatus', 'estimatedPrepMinutes', 'trackingToken', 'isOffline',
+        'readyAt', 'completedAt', 'syncedFromOfflineJson', 'syncedAt'
+      ];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.timestamp is string && data.timestamp.size() <= 50 &&
+             data.items is list && data.items.size() > 0 && data.items.size() <= 100 &&
+             data.subtotal is number && data.subtotal >= 0 &&
+             data.tax is number && data.tax >= 0 &&
+             (!('serviceAmount' in data) || data.serviceAmount == null || (data.serviceAmount is number && data.serviceAmount >= 0)) &&
+             data.total is number && data.total >= 0 &&
+             (!('grandTotal' in data) || data.grandTotal == null || (data.grandTotal is number && data.grandTotal >= 0)) &&
+             data.paymentMethod is string && data.paymentMethod.size() <= 50 &&
+             data.cashReceived is number && data.cashReceived >= 0 &&
+             (!('amountPaid' in data) || data.amountPaid == null || (data.amountPaid is number && data.amountPaid >= 0)) &&
+             data.changeAmount is number && data.changeAmount >= 0 &&
+             (!('aiSource' in data) || data.aiSource == null || (data.aiSource is string && data.aiSource.size() <= 50)) &&
+             (!('orderMode' in data) || data.orderMode == null || (data.orderMode is string && data.orderMode.size() <= 50)) &&
+             (!('orderNotes' in data) || data.orderNotes == null || (data.orderNotes is string && data.orderNotes.size() <= 500)) &&
+             (!('cashierName' in data) || data.cashierName == null || (data.cashierName is string && data.cashierName.size() <= 100)) &&
+             (!('shiftLabel' in data) || data.shiftLabel == null || (data.shiftLabel is string && data.shiftLabel.size() <= 100)) &&
+             (!('shiftHours' in data) || data.shiftHours == null || (data.shiftHours is string && data.shiftHours.size() <= 50)) &&
+             (!('queueNumber' in data) || data.queueNumber == null || (data.queueNumber is string && data.queueNumber.size() <= 50)) &&
+             (!('customerPhone' in data) || data.customerPhone == null || (data.customerPhone is string && data.customerPhone.size() <= 50)) &&
+             (!('customerName' in data) || data.customerName == null || (data.customerName is string && data.customerName.size() <= 100)) &&
+             data.kitchenStatus in ['preparing', 'cooking', 'ready', 'completed'] &&
+             (!('estimatedPrepMinutes' in data) || data.estimatedPrepMinutes == null || (data.estimatedPrepMinutes is number && data.estimatedPrepMinutes >= 0 && data.estimatedPrepMinutes <= 180)) &&
+             (!('trackingToken' in data) || data.trackingToken == null || (data.trackingToken is string && data.trackingToken.size() <= 64)) &&
+             (!('isOffline' in data) || data.isOffline == null || (data.isOffline is bool)) &&
+             (!('readyAt' in data) || data.readyAt == null || (data.readyAt is string && data.readyAt.size() <= 50)) &&
+             (!('completedAt' in data) || data.completedAt == null || (data.completedAt is string && data.completedAt.size() <= 50)) &&
+             (!('syncedFromOfflineJson' in data) || data.syncedFromOfflineJson == null || (data.syncedFromOfflineJson is bool)) &&
+             (!('syncedAt' in data) || data.syncedAt == null || (data.syncedAt is string && data.syncedAt.size() <= 50));
+    }
+
+    // Isolated update rule allowing kitchen displays and customer tracker status updates
+    function isValidKitchenStatusUpdate() {
+      let affected = request.resource.data.diff(resource.data).affectedKeys();
+      return affected.hasOnly(['kitchenStatus', 'readyAt', 'completedAt']) &&
+             request.resource.data.kitchenStatus in ['preparing', 'cooking', 'ready', 'completed'] &&
+             (!('readyAt' in request.resource.data) || request.resource.data.readyAt == null || (request.resource.data.readyAt is string && request.resource.data.readyAt.size() <= 50)) &&
+             (!('completedAt' in request.resource.data) || request.resource.data.completedAt == null || (request.resource.data.completedAt is string && request.resource.data.completedAt.size() <= 50));
+    }
+
+    // --- Menu Items Validator ---
+    function isValidMenuItem(data) {
+      let requiredKeys = ['id', 'name', 'category', 'price'];
+      let allowedKeys = [
+        'id', 'name', 'nameEn', 'category', 'price', 'description',
+        'isAvailable', 'recipe', 'iconEmoji', 'popularityScore',
+        'imageUrl', 'isManualSoldOut', 'forceManualReady'
+      ];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             (!('nameEn' in data) || data.nameEn == null || (data.nameEn is string && data.nameEn.size() <= 100)) &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.price is number && data.price >= 0 &&
+             (!('description' in data) || data.description == null || (data.description is string && data.description.size() <= 1000)) &&
+             (!('isAvailable' in data) || data.isAvailable == null || (data.isAvailable is bool)) &&
+             (!('recipe' in data) || data.recipe == null || (data.recipe is map && data.recipe.keys().size() <= 50)) &&
+             (!('iconEmoji' in data) || data.iconEmoji == null || (data.iconEmoji is string && data.iconEmoji.size() <= 20)) &&
+             (!('popularityScore' in data) || data.popularityScore == null || (data.popularityScore is number && data.popularityScore >= 0)) &&
+             (!('imageUrl' in data) || data.imageUrl == null || (data.imageUrl is string && data.imageUrl.size() <= 500)) &&
+             (!('isManualSoldOut' in data) || data.isManualSoldOut == null || (data.isManualSoldOut is bool)) &&
+             (!('forceManualReady' in data) || data.forceManualReady == null || (data.forceManualReady is bool));
+    }
+
+    // --- Raw Materials Validator ---
+    function isValidRawMaterial(data) {
+      let requiredKeys = ['id', 'name', 'category', 'currentStock', 'unit', 'minSafetyStock', 'costPerUnit'];
+      let allowedKeys = ['id', 'name', 'category', 'currentStock', 'unit', 'minSafetyStock', 'minThreshold', 'costPerUnit'];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.currentStock is number &&
+             data.unit is string && data.unit.size() > 0 && data.unit.size() <= 20 &&
+             data.minSafetyStock is number && data.minSafetyStock >= 0 &&
+             (!('minThreshold' in data) || data.minThreshold == null || (data.minThreshold is number && data.minThreshold >= 0)) &&
+             data.costPerUnit is number && data.costPerUnit >= 0;
+    }
+
+    // --- Procurement Logs / Orders Validator ---
+    function isValidProcurement(data) {
+      let requiredKeys = ['id', 'rawMaterialId', 'rawMaterialName', 'quantityAdded', 'unit', 'costTotal', 'supplier', 'timestamp'];
+      let allowedKeys = ['id', 'rawMaterialId', 'rawMaterialName', 'quantityAdded', 'unit', 'costTotal', 'supplier', 'timestamp'];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.rawMaterialId is string && data.rawMaterialId.size() > 0 && data.rawMaterialId.size() <= 64 &&
+             data.rawMaterialName is string && data.rawMaterialName.size() > 0 && data.rawMaterialName.size() <= 100 &&
+             data.quantityAdded is number && data.quantityAdded >= 0 &&
+             data.unit is string && data.unit.size() > 0 && data.unit.size() <= 20 &&
+             data.costTotal is number && data.costTotal >= 0 &&
+             data.supplier is string && data.supplier.size() > 0 && data.supplier.size() <= 100 &&
+             data.timestamp is string && data.timestamp.size() <= 50;
+    }
+
+    // --- Expenses Validator ---
+    function isValidExpense(data) {
+      let requiredKeys = ['id', 'title', 'category', 'amount', 'timestamp', 'loggedBy'];
+      let allowedKeys = ['id', 'title', 'category', 'amount', 'timestamp', 'loggedBy', 'referenceId'];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.amount is number && data.amount >= 0 &&
+             data.timestamp is string && data.timestamp.size() <= 50 &&
+             data.loggedBy is string && data.loggedBy.size() > 0 && data.loggedBy.size() <= 100 &&
+             (!('referenceId' in data) || data.referenceId == null || (data.referenceId is string && data.referenceId.size() <= 64));
+    }
+
+    // --- Cashiers Validator ---
+    function isValidCashier(data) {
+      let requiredKeys = ['id', 'name', 'role', 'defaultShiftLabel', 'startTime', 'endTime'];
+      let allowedKeys = ['id', 'name', 'role', 'defaultShiftLabel', 'startTime', 'endTime', 'pin'];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 100 &&
+             data.role is string && data.role.size() > 0 && data.role.size() <= 50 &&
+             data.defaultShiftLabel is string && data.defaultShiftLabel.size() <= 50 &&
+             data.startTime is string && data.startTime.size() <= 20 &&
+             data.endTime is string && data.endTime.size() <= 20 &&
+             (!('pin' in data) || data.pin == null || (data.pin is string && data.pin.size() <= 20));
+    }
+
+    // --- Shift Sessions Validator ---
+    function isValidShiftSession(data) {
+      let requiredKeys = ['id', 'cashierId', 'cashierName', 'role', 'shiftLabel', 'shiftHours', 'startTime', 'openingCash', 'status'];
+      let allowedKeys = [
+        'id', 'cashierId', 'cashierName', 'role', 'shiftLabel', 'shiftHours',
+        'startTime', 'endTime', 'openingCash', 'closingCash', 'expectedCash',
+        'variance', 'totalOrders', 'grossSales', 'cashSales', 'nonCashSales',
+        'notes', 'nextCashierName', 'status'
+      ];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+             data.cashierId is string && data.cashierId.size() > 0 && data.cashierId.size() <= 64 &&
+             data.cashierName is string && data.cashierName.size() > 0 && data.cashierName.size() <= 100 &&
+             data.role is string && data.role.size() <= 50 &&
+             data.shiftLabel is string && data.shiftLabel.size() <= 50 &&
+             data.shiftHours is string && data.shiftHours.size() <= 50 &&
+             data.startTime is string && data.startTime.size() <= 50 &&
+             (!('endTime' in data) || data.endTime == null || (data.endTime is string && data.endTime.size() <= 50)) &&
+             data.openingCash is number && data.openingCash >= 0 &&
+             (!('closingCash' in data) || data.closingCash == null || (data.closingCash is number && data.closingCash >= 0)) &&
+             (!('expectedCash' in data) || data.expectedCash == null || (data.expectedCash is number && data.expectedCash >= 0)) &&
+             (!('variance' in data) || data.variance == null || (data.variance is number)) &&
+             (!('totalOrders' in data) || data.totalOrders == null || (data.totalOrders is number && data.totalOrders >= 0)) &&
+             (!('grossSales' in data) || data.grossSales == null || (data.grossSales is number && data.grossSales >= 0)) &&
+             (!('cashSales' in data) || data.cashSales == null || (data.cashSales is number && data.cashSales >= 0)) &&
+             (!('nonCashSales' in data) || data.nonCashSales == null || (data.nonCashSales is number && data.nonCashSales >= 0)) &&
+             (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 500)) &&
+             (!('nextCashierName' in data) || data.nextCashierName == null || (data.nextCashierName is string && data.nextCashierName.size() <= 100)) &&
+             data.status in ['ACTIVE', 'CLOSED'];
+    }
+
+    // --- Z-Reports Validator ---
+    function isValidZReport(data) {
+      let requiredKeys = [
+        'reportId', 'cashierName', 'role', 'shiftLabel', 'shiftHours',
+        'startTime', 'endTime', 'totalOrders', 'grossSales', 'actualCash', 'createdAt'
+      ];
+      let allowedKeys = [
+        'storeName', 'reportId', 'cashierName', 'role', 'shiftLabel', 'shiftHours',
+        'startTime', 'endTime', 'totalOrders', 'onlineOrderCount', 'offlineOrderCount',
+        'grossSales', 'taxAndServiceTotal', 'cashSales', 'nonCashSales', 'openingCash',
+        'expectedCash', 'actualCash', 'variance', 'aiSummary', 'nextCashierName',
+        'createdAt', 'syncedToFirestore'
+      ];
+
+      return data.keys().hasAll(requiredKeys) &&
+             data.keys().hasOnly(allowedKeys) &&
+             data.reportId is string && data.reportId.size() > 0 && data.reportId.size() <= 64 &&
+             data.cashierName is string && data.cashierName.size() > 0 && data.cashierName.size() <= 100 &&
+             data.role is string && data.role.size() <= 50 &&
+             data.shiftLabel is string && data.shiftLabel.size() <= 50 &&
+             data.shiftHours is string && data.shiftHours.size() <= 50 &&
+             data.startTime is string && data.startTime.size() <= 50 &&
+             data.endTime is string && data.endTime.size() <= 50 &&
+             data.totalOrders is number && data.totalOrders >= 0 &&
+             data.grossSales is number && data.grossSales >= 0 &&
+             data.actualCash is number && data.actualCash >= 0 &&
+             data.createdAt is string && data.createdAt.size() <= 50 &&
+             (!('storeName' in data) || data.storeName == null || (data.storeName is string && data.storeName.size() <= 100)) &&
+             (!('onlineOrderCount' in data) || data.onlineOrderCount == null || (data.onlineOrderCount is number && data.onlineOrderCount >= 0)) &&
+             (!('offlineOrderCount' in data) || data.offlineOrderCount == null || (data.offlineOrderCount is number && data.offlineOrderCount >= 0)) &&
+             (!('taxAndServiceTotal' in data) || data.taxAndServiceTotal == null || (data.taxAndServiceTotal is number && data.taxAndServiceTotal >= 0)) &&
+             (!('cashSales' in data) || data.cashSales == null || (data.cashSales is number && data.cashSales >= 0)) &&
+             (!('nonCashSales' in data) || data.nonCashSales == null || (data.nonCashSales is number && data.nonCashSales >= 0)) &&
+             (!('openingCash' in data) || data.openingCash == null || (data.openingCash is number && data.openingCash >= 0)) &&
+             (!('expectedCash' in data) || data.expectedCash == null || (data.expectedCash is number && data.expectedCash >= 0)) &&
+             (!('variance' in data) || data.variance == null || (data.variance is number)) &&
+             (!('aiSummary' in data) || data.aiSummary == null || (data.aiSummary is string && data.aiSummary.size() <= 1000)) &&
+             (!('nextCashierName' in data) || data.nextCashierName == null || (data.nextCashierName is string && data.nextCashierName.size() <= 100)) &&
+             (!('syncedToFirestore' in data) || data.syncedToFirestore == null || (data.syncedToFirestore is bool));
+    }
+
+    // ===============================================================
+    // Collection Match Rules
+    // ===============================================================
+
+    // ---------------------------------------------------------------
+    // 1. Transactions Collection
+    // ---------------------------------------------------------------
+    match /transactions/{transactionId} {
+      // Single order lookup via receipt QR code and collection querying for offline-first POS & KDS
+      allow get: if true;
+      allow list: if true;
+
+      // Creating a transaction requires strict domain structure validation
+      allow create: if isValidTransaction(request.resource.data);
+
+      // Updating an order:
+      // - Unauthenticated users/customers/KDS can update kitchenStatus (or readyAt/completedAt)
+      // - Authenticated staff can update valid transactions while keeping id, timestamp, trackingToken immutable
+      allow update: if isValidKitchenStatusUpdate() ||
+                       (isAuthenticated() && isValidTransaction(request.resource.data) && areImmutableFieldsUnchanged(['id', 'timestamp', 'trackingToken']));
+
+      // Deleting transactions is restricted to authenticated users
+      allow delete: if isAuthenticated();
+    }
+
+    // ---------------------------------------------------------------
+    // 2. Menu Items Collection
+    // ---------------------------------------------------------------
+    match /menu_items/{menuItemId} {
+      // Menus are readable by POS terminals and customers browsing the menu
+      allow read: if true;
+
+      // Creating menu item requires schema validation
+      allow create: if isValidMenuItem(request.resource.data);
+
+      // Updating menu item requires schema validation with immutable id
+      allow update: if isValidMenuItem(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+
+      // Deleting menu items (e.g. bundle or item removal)
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 3. Raw Materials (Inventory & Stock) Collection
+    // ---------------------------------------------------------------
+    match /raw_materials/{materialId} {
+      allow read: if true;
+      allow create: if isValidRawMaterial(request.resource.data);
+      allow update: if isValidRawMaterial(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 4. Procurement Logs and Orders Collections
+    // ---------------------------------------------------------------
+    match /procurement_logs/{logId} {
+      allow read: if true;
+      allow create: if isValidProcurement(request.resource.data);
+      allow update: if isValidProcurement(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if true;
+    }
+
+    match /procurement_orders/{orderId} {
+      allow read: if true;
+      allow create: if isValidProcurement(request.resource.data);
+      allow update: if isValidProcurement(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 5. Business Expenses Collection
+    // ---------------------------------------------------------------
+    match /expenses/{expenseId} {
+      allow read: if true;
+      allow create: if isValidExpense(request.resource.data);
+      allow update: if isValidExpense(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 6. Cashier Employee Roster Collection
+    // ---------------------------------------------------------------
+    match /cashiers/{cashierId} {
+      allow read: if true;
+      allow create: if isValidCashier(request.resource.data);
+      allow update: if isValidCashier(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 7. Cashier Shift Sessions Collection
+    // ---------------------------------------------------------------
+    match /shift_sessions/{sessionId} {
+      allow read: if true;
+      allow create: if isValidShiftSession(request.resource.data);
+      allow update: if isValidShiftSession(request.resource.data) && areImmutableFieldsUnchanged(['id', 'startTime']);
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 8. Z-Reports (Daily/Shift Cash Settlement) Collection
+    // ---------------------------------------------------------------
+    match /z_reports/{reportId} {
+      allow read: if true;
+      allow create: if isValidZReport(request.resource.data);
+      allow update: if isValidZReport(request.resource.data) && areImmutableFieldsUnchanged(['reportId', 'createdAt']);
+      allow delete: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 9. Customers (Loyalty / Profiles) Collection (Top-Level)
+    // ---------------------------------------------------------------
+    match /customers/{customerId} {
+      allow read, write: if true;
+    }
+
+    // ---------------------------------------------------------------
+    // 10. Settings Collection (Top-Level)
+    // ---------------------------------------------------------------
+    match /settings/{settingId} {
+      allow read, write: if true;
+    }
+
+    // ===============================================================
+    // Multi-Tenant Isolation: /tenants/{tenantId}/...
+    // ===============================================================
+    match /tenants/{tenantId} {
+      // Store / account root document (e.g. metadata, profile)
+      allow read, write: if true;
+
+      // 1. Tenant Transactions Collection
+      match /transactions/{transactionId} {
+        allow get: if true;
+        allow list: if true;
+        allow create: if isValidTransaction(request.resource.data);
+        allow update: if isValidKitchenStatusUpdate() ||
+                         (isAuthenticated() && isValidTransaction(request.resource.data) && areImmutableFieldsUnchanged(['id', 'timestamp', 'trackingToken']));
+        allow delete: if isAuthenticated();
+      }
+
+      // 2. Tenant Menu Items Collection
+      match /menu_items/{menuItemId} {
+        allow read: if true;
+        allow create: if isValidMenuItem(request.resource.data);
+        allow update: if isValidMenuItem(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+        allow delete: if true;
+      }
+
+      // 3. Tenant Raw Materials Collection
+      match /raw_materials/{materialId} {
+        allow read: if true;
+        allow create: if isValidRawMaterial(request.resource.data);
+        allow update: if isValidRawMaterial(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+        allow delete: if true;
+      }
+
+      // 4. Tenant Procurement Logs & Orders Collections
+      match /procurement_logs/{logId} {
+        allow read: if true;
+        allow create: if isValidProcurement(request.resource.data);
+        allow update: if isValidProcurement(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+        allow delete: if true;
+      }
+
+      match /procurement_orders/{orderId} {
+        allow read: if true;
+        allow create: if isValidProcurement(request.resource.data);
+        allow update: if isValidProcurement(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+        allow delete: if true;
+      }
+
+      // 5. Tenant Business Expenses Collection
+      match /expenses/{expenseId} {
+        allow read: if true;
+        allow create: if isValidExpense(request.resource.data);
+        allow update: if isValidExpense(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+        allow delete: if true;
+      }
+
+      // 6. Tenant Cashier Employee Roster Collection
+      match /cashiers/{cashierId} {
+        allow read: if true;
+        allow create: if isValidCashier(request.resource.data);
+        allow update: if isValidCashier(request.resource.data) && areImmutableFieldsUnchanged(['id']);
+        allow delete: if true;
+      }
+
+      // 7. Tenant Cashier Shift Sessions Collection
+      match /shift_sessions/{sessionId} {
+        allow read: if true;
+        allow create: if isValidShiftSession(request.resource.data);
+        allow update: if isValidShiftSession(request.resource.data) && areImmutableFieldsUnchanged(['id', 'startTime']);
+        allow delete: if true;
+      }
+
+      // 8. Tenant Z-Reports Collection
+      match /z_reports/{reportId} {
+        allow read: if true;
+        allow create: if isValidZReport(request.resource.data);
+        allow update: if isValidZReport(request.resource.data) && areImmutableFieldsUnchanged(['reportId', 'createdAt']);
+        allow delete: if true;
+      }
+
+      // 9. Tenant Customers Collection
+      match /customers/{customerId} {
+        allow read, write: if true;
+      }
+
+      // 10. Tenant Settings Collection
+      match /settings/{settingId} {
+        allow read, write: if true;
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "278951292221",
+    "project_id": "nusantara-hybrid-pos",
+    "storage_bucket": "nusantara-hybrid-pos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:278951292221:android:3a3714e22baf5a37392954",
+        "android_client_info": {
+          "package_name": "com.miya.nusantara_hybrid_pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDuyLsbr1n87DfNAn-S0x8BIG-PGfy-CNg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
