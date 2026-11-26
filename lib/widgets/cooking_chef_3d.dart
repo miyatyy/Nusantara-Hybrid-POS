@@ -31,133 +31,12 @@ class ChefMascotImageCache {
         byteData = await rootBundle.load('assets/images/chef_logo.png');
       }
 
-      // 2. Instantiate ImageCodec
+      // 2. Instantiate ImageCodec (already clean transparent 512x512 PNG)
       final codec = await ui.instantiateImageCodec(byteData.buffer.asUint8List());
       final frameInfo = await codec.getNextFrame();
       final sourceImage = frameInfo.image;
-
-      final srcWidth = sourceImage.width;
-      final srcHeight = sourceImage.height;
-
-      // 3. If image width is wider than height * 1.3 (meaning colored & B&W are side-by-side), crop only left 50%
-      final bool isSideBySide = srcWidth > (srcHeight * 1.3);
-      final int targetWidth = isSideBySide ? (srcWidth ~/ 2) : srcWidth;
-      final int targetHeight = srcHeight;
-
-      // 4. Extract raw RGBA pixel buffer
-      final rawByteData = await sourceImage.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (rawByteData == null) {
-        transparentChefImage = sourceImage;
-        return sourceImage;
-      }
-
-      final srcPixels = rawByteData.buffer.asUint8List();
-      final outputPixels = Uint8List(targetWidth * targetHeight * 4);
-
-      // 5. Convert all background pixels to full transparency (100% transparent background)
-      // Detected circular emblem center & radius for left 50% logo:
-      // When side-by-side: cx=264, cy=284, radius=196. Everything outside circle is background checkerboard.
-      final double cx = isSideBySide ? 264.0 : (targetWidth / 2.0);
-      final double cy = isSideBySide ? 284.0 : (targetHeight / 2.0);
-      final double radius = isSideBySide ? 196.0 : (math.min(targetWidth, targetHeight) / 2.0);
-
-      // Copy cropped left 50% into output buffer first
-      for (int y = 0; y < targetHeight; y++) {
-        for (int x = 0; x < targetWidth; x++) {
-          final srcIndex = ((y * srcWidth) + x) * 4;
-          final dstIndex = ((y * targetWidth) + x) * 4;
-          outputPixels[dstIndex] = srcPixels[srcIndex];
-          outputPixels[dstIndex + 1] = srcPixels[srcIndex + 1];
-          outputPixels[dstIndex + 2] = srcPixels[srcIndex + 2];
-          outputPixels[dstIndex + 3] = srcPixels[srcIndex + 3];
-        }
-      }
-
-      // BFS Flood-fill from the four corners and borders to eliminate white and light-gray checkerboard pixels
-      final visited = Uint8List(targetWidth * targetHeight);
-      final List<int> queue = [];
-
-      void checkAndEnqueue(int x, int y) {
-        if (x < 0 || x >= targetWidth || y < 0 || y >= targetHeight) return;
-        final idx = y * targetWidth + x;
-        if (visited[idx] != 0) return;
-        visited[idx] = 1;
-
-        final pIdx = idx * 4;
-        final r = outputPixels[pIdx];
-        final g = outputPixels[pIdx + 1];
-        final b = outputPixels[pIdx + 2];
-        final a = outputPixels[pIdx + 3];
-
-        final dist = math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-        final bool isOutsideCircle = dist > (radius + 1.0);
-        // Matches both white (255) and light-gray checkerboard squares (175-235)
-        final bool isCheckerOrWhite = (r - g).abs() < 14 && (g - b).abs() < 14 && r > 175;
-
-        if (a < 20 || isOutsideCircle || isCheckerOrWhite) {
-          outputPixels[pIdx] = 0;
-          outputPixels[pIdx + 1] = 0;
-          outputPixels[pIdx + 2] = 0;
-          outputPixels[pIdx + 3] = 0;
-          queue.add(idx);
-        }
-      }
-
-      // Enqueue all four border edges
-      for (int x = 0; x < targetWidth; x++) {
-        checkAndEnqueue(x, 0);
-        checkAndEnqueue(x, targetHeight - 1);
-      }
-      for (int y = 0; y < targetHeight; y++) {
-        checkAndEnqueue(0, y);
-        checkAndEnqueue(targetWidth - 1, y);
-      }
-
-      int head = 0;
-      while (head < queue.length) {
-        final current = queue[head++];
-        final cxPos = current % targetWidth;
-        final cyPos = current ~/ targetWidth;
-
-        checkAndEnqueue(cxPos + 1, cyPos);
-        checkAndEnqueue(cxPos - 1, cyPos);
-        checkAndEnqueue(cxPos, cyPos + 1);
-        checkAndEnqueue(cxPos, cyPos - 1);
-      }
-
-      // Second cleanup pass: ensure any pixel outside the circular emblem is 100% transparent
-      for (int y = 0; y < targetHeight; y++) {
-        for (int x = 0; x < targetWidth; x++) {
-          final idx = y * targetWidth + x;
-          final pIdx = idx * 4;
-          final dist = math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
-          final r = outputPixels[pIdx];
-          final g = outputPixels[pIdx + 1];
-          final b = outputPixels[pIdx + 2];
-
-          if (dist > (radius + 0.5) || (dist > (radius - 3.5) && (r - g).abs() < 14 && (g - b).abs() < 14 && r > 175)) {
-            outputPixels[pIdx] = 0;
-            outputPixels[pIdx + 1] = 0;
-            outputPixels[pIdx + 2] = 0;
-            outputPixels[pIdx + 3] = 0;
-          }
-        }
-      }
-
-      // 6. Reconstruct clean transparent ui.Image via decodeImageFromPixels
-      final completer = Completer<ui.Image>();
-      ui.decodeImageFromPixels(
-        outputPixels,
-        targetWidth,
-        targetHeight,
-        ui.PixelFormat.rgba8888,
-        (ui.Image result) {
-          transparentChefImage = result;
-          completer.complete(result);
-        },
-      );
-
-      return await completer.future;
+      transparentChefImage = sourceImage;
+      return sourceImage;
     } catch (e) {
       debugPrint('ChefMascotImageCache error: $e');
       return null;
@@ -257,49 +136,21 @@ class _CookingChef3DWidgetState extends State<CookingChef3DWidget>
 
             return Transform.translate(
               offset: Offset(0, bob),
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  // Subtle Golden Amber and Royal Blue Aura Halo
-                  Container(
-                    width: s * 0.90,
-                    height: s * 0.90,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.goldenAmber.withAlpha(90),
-                          blurRadius: 16,
-                          spreadRadius: 2,
-                        ),
-                        BoxShadow(
-                          color: AppTheme.royalBlue.withAlpha(50),
-                          blurRadius: 10,
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // Mascot Image or Canvas with Transparent Render & Golden Sparkles
-                  if (_decodedImage != null)
-                    CustomPaint(
+              child: _decodedImage != null
+                  ? CustomPaint(
                       size: Size(s, s),
                       painter: _TransparentChefSparklesPainter(
                         image: _decodedImage!,
                         progress: progress,
                       ),
                     )
-                  else
-                    // Fallback while decoding
-                    Image.asset(
-                      'assets/images/chef_logo.png',
+                  : Image.asset(
+                      'assets/images/chef_cooking_3d.png',
                       width: s,
                       height: s,
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) => _buildFallbackLogo(s),
                     ),
-                ],
-              ),
             );
           },
         ),
