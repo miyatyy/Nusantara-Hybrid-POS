@@ -14,10 +14,12 @@ import '../theme/app_theme.dart';
 /// Triggers audible chime and callout when an order moves to Ready.
 class QueueDisplayScreen extends StatefulWidget {
   final List<PosTransaction> transactions;
+  final VoidCallback? onOpenDrawer;
 
   const QueueDisplayScreen({
     super.key,
     required this.transactions,
+    this.onOpenDrawer,
   });
 
   @override
@@ -53,11 +55,12 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
     for (final order in readyOrders) {
       if (!_announcedReadyOrders.contains(order.receiptId)) {
         _announcedReadyOrders.add(order.receiptId);
-        // Play audible alert and haptic chime
+        // Play audible alert, English TTS voice announcement, and haptic chime
         try {
           SystemSound.play(SystemSoundType.alert);
           HapticFeedback.heavyImpact();
         } catch (_) {}
+        _speakQueueCallout(order.queueNumber);
 
         if (mounted) {
           setState(() {
@@ -70,6 +73,18 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
         }
       }
     }
+  }
+
+  Future<void> _speakQueueCallout(String queueNumber) async {
+    try {
+      final rawDigits = queueNumber.replaceAll('#', '').trim();
+      final spokenDigits = rawDigits.split('').join(', ');
+      const channel = MethodChannel('com.miya.nusantara_hybrid_pos/thermal_printer');
+      await channel.invokeMethod('speakText', {
+        'text': 'Attention please! Queue number, $spokenDigits, is ready for pickup. Please proceed to the counter.',
+        'repeatCount': 2,
+      });
+    } catch (_) {}
   }
 
   @override
@@ -138,22 +153,32 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
 
                 // 1. Top Header: Store Branding & Live Clock
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: const BoxDecoration(
                     color: Color(0xFF1E293B),
                     border: Border(bottom: BorderSide(color: Color(0xFF334155), width: 1.5)),
                   ),
                   child: Row(
                     children: [
+                      if (widget.onOpenDrawer != null) ...[
+                        IconButton(
+                          icon: const Icon(Icons.menu_rounded, color: Colors.white, size: 22),
+                          tooltip: 'Navigation Menu',
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                          onPressed: widget.onOpenDrawer,
+                        ),
+                        const SizedBox(width: 6),
+                      ],
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
                           color: AppTheme.royalBlue,
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Icon(Icons.tv_rounded, color: AppTheme.brightYellow, size: 24),
+                        child: const Icon(Icons.tv_rounded, color: AppTheme.brightYellow, size: 22),
                       ),
-                      const SizedBox(width: 14),
+                      const SizedBox(width: 10),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -204,40 +229,83 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
                   ),
                 ),
 
-                // 2. The 2 Large Columns
+                // 2. Responsive Columns (Stacked on Phone, Side-by-Side on Tablet/TV)
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Column A: Preparing
-                        Expanded(
-                          child: _buildQueueColumn(
-                            title: 'PREPARING',
-                            subtitle: 'Chef Is Preparing Your Order',
-                            icon: Icons.outdoor_grill_rounded,
-                            accentColor: const Color(0xFFF59E0B),
-                            badgeColor: const Color(0xFFB45309),
-                            orders: preparingOrders,
-                            isReadyColumn: false,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isCompact = constraints.maxWidth < 600;
+                      if (isCompact) {
+                        return Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Expanded(
+                                child: _buildQueueColumn(
+                                  title: 'READY FOR PICKUP',
+                                  subtitle: 'Please Proceed to the Pickup Counter',
+                                  icon: Icons.check_circle_rounded,
+                                  accentColor: const Color(0xFF10B981),
+                                  badgeColor: const Color(0xFF065F46),
+                                  orders: readyOrders,
+                                  isReadyColumn: true,
+                                  isCompact: true,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Expanded(
+                                child: _buildQueueColumn(
+                                  title: 'PREPARING',
+                                  subtitle: 'Chef Is Preparing Your Order',
+                                  icon: Icons.outdoor_grill_rounded,
+                                  accentColor: const Color(0xFFF59E0B),
+                                  badgeColor: const Color(0xFFB45309),
+                                  orders: preparingOrders,
+                                  isReadyColumn: false,
+                                  isCompact: true,
+                                ),
+                              ),
+                            ],
                           ),
+                        );
+                      }
+
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // Column A: Preparing
+                            Expanded(
+                              child: _buildQueueColumn(
+                                title: 'PREPARING',
+                                subtitle: 'Chef Is Preparing Your Order',
+                                icon: Icons.outdoor_grill_rounded,
+                                accentColor: const Color(0xFFF59E0B),
+                                badgeColor: const Color(0xFFB45309),
+                                orders: preparingOrders,
+                                isReadyColumn: false,
+                                isCompact: false,
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            // Column B: Ready for Pickup
+                            Expanded(
+                              child: _buildQueueColumn(
+                                title: 'READY FOR PICKUP',
+                                subtitle: 'Please Proceed to the Pickup Counter',
+                                icon: Icons.check_circle_rounded,
+                                accentColor: const Color(0xFF10B981),
+                                badgeColor: const Color(0xFF065F46),
+                                orders: readyOrders,
+                                isReadyColumn: true,
+                                isCompact: false,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 16),
-                        // Column B: Ready for Pickup
-                        Expanded(
-                          child: _buildQueueColumn(
-                            title: 'READY FOR PICKUP',
-                            subtitle: 'Please Proceed to the Pickup Counter',
-                            icon: Icons.check_circle_rounded,
-                            accentColor: const Color(0xFF10B981),
-                            badgeColor: const Color(0xFF065F46),
-                            orders: readyOrders,
-                            isReadyColumn: true,
-                          ),
-                        ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
 
@@ -285,6 +353,7 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
     required Color badgeColor,
     required List<PosTransaction> orders,
     required bool isReadyColumn,
+    bool isCompact = false,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -373,20 +442,24 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
                           color: const Color(0xFF475569),
                         ),
                         const SizedBox(height: 10),
-                        Text(
-                          isReadyColumn ? 'No orders ready yet' : 'No orders currently preparing',
-                          style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8), fontWeight: FontWeight.bold),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            isReadyColumn ? 'No orders ready yet' : 'No orders currently preparing',
+                            style: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8), fontWeight: FontWeight.bold),
+                            textAlign: TextAlign.center,
+                          ),
                         ),
                       ],
                     ),
                   )
                 : GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.5,
+                    padding: EdgeInsets.all(isCompact ? 10 : 16),
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: isCompact ? 3 : 2,
+                      mainAxisSpacing: isCompact ? 8 : 12,
+                      crossAxisSpacing: isCompact ? 8 : 12,
+                      childAspectRatio: isCompact ? 1.25 : 1.5,
                     ),
                     itemCount: orders.length,
                     itemBuilder: (context, index) {
@@ -395,6 +468,7 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
                           order.orderMode.toUpperCase().contains('BUNGKUS');
 
                       return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                         decoration: BoxDecoration(
                           color: isReadyColumn ? const Color(0xFF064E3B) : const Color(0xFF0F172A),
                           borderRadius: BorderRadius.circular(14),
@@ -412,35 +486,39 @@ class _QueueDisplayScreenState extends State<QueueDisplayScreen> {
                                 ]
                               : null,
                         ),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              order.queueNumber,
-                              style: TextStyle(
-                                fontSize: 32,
-                                fontWeight: FontWeight.w900,
-                                color: isReadyColumn ? AppTheme.brightYellow : Colors.white,
-                                letterSpacing: 1,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withAlpha(25),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                isTakeAway ? 'TAKE AWAY' : 'DINE IN',
-                                style: const TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                order.queueNumber,
+                                style: TextStyle(
+                                  fontSize: isCompact ? 24 : 32,
+                                  fontWeight: FontWeight.w900,
+                                  color: isReadyColumn ? AppTheme.brightYellow : Colors.white,
+                                  letterSpacing: 1,
                                 ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(height: 2),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withAlpha(25),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  isTakeAway ? 'TAKE AWAY' : 'DINE IN',
+                                  style: const TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     },

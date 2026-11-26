@@ -12,8 +12,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.speech.tts.TextToSpeech
 import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -23,14 +25,23 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.io.OutputStream
+import java.util.Locale
 import java.util.UUID
 
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.miya.nusantara_hybrid_pos/thermal_printer"
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+    private var tts: TextToSpeech? = null
+    private var ttsReady: Boolean = false
 
     override fun configureFlutterEngine(@NonNull flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        tts = TextToSpeech(this) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                tts?.language = Locale.US
+                ttsReady = true
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1002)
@@ -91,12 +102,35 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "showOrderReadyNotification" -> {
-                    val title = call.argument<String>("title") ?: "Pesanan Siap Diambil!"
-                    val body = call.argument<String>("body") ?: "Silakan menuju counter kasir untuk mengambil pesanan Anda."
+                    val title = call.argument<String>("title") ?: "Order Ready for Pickup!"
+                    val body = call.argument<String>("body") ?: "Please proceed to the counter to collect your order."
                     try {
                         showOrderReadyNotification(title, body)
                         result.success(true)
                     } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "speakText" -> {
+                    val text = call.argument<String>("text") ?: ""
+                    val repeatCount = call.argument<Int>("repeatCount") ?: 2
+                    if (text.isNotEmpty() && ttsReady) {
+                        tts?.language = Locale.US
+                        tts?.setPitch(1.05f)
+                        tts?.setSpeechRate(0.84f)
+                        val params = Bundle().apply {
+                            putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f)
+                        }
+                        val count = repeatCount.coerceIn(1, 3)
+                        for (i in 0 until count) {
+                            val mode = if (i == 0) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+                            tts?.speak(text, mode, params, "queue_${System.currentTimeMillis()}_$i")
+                            if (i < count - 1) {
+                                tts?.playSilentUtterance(650, TextToSpeech.QUEUE_ADD, "pause_${System.currentTimeMillis()}_$i")
+                            }
+                        }
+                        result.success(true)
+                    } else {
                         result.success(false)
                     }
                 }
@@ -105,6 +139,12 @@ class MainActivity : FlutterActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
     }
 
     private fun checkAndRequestPermissions(): Boolean {

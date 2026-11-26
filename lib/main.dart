@@ -62,13 +62,18 @@ void main() async {
     debugPrint('Firebase.initializeApp notice: $e');
   }
 
-  // 2. Activate Firebase App Check with AndroidDebugProvider for sideloaded hackathon APKs
+  // 2. Activate Firebase App Check with AndroidDebugProvider (and ReCaptchaV3Provider for Web)
   try {
+    const recaptchaKey = String.fromEnvironment(
+      'RECAPTCHA_V3_SITE_KEY',
+      defaultValue: '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI',
+    );
     await FirebaseAppCheck.instance.activate(
       providerAndroid: const AndroidDebugProvider(),
       providerApple: const AppleDebugProvider(),
+      providerWeb: ReCaptchaV3Provider(recaptchaKey),
     );
-    debugPrint('Firebase App Check activated with AndroidDebugProvider (AndroidProvider.debug).');
+    debugPrint('Firebase App Check activated with AndroidDebugProvider & ReCaptchaV3Provider.');
   } catch (e) {
     debugPrint('Firebase App Check activation notice: $e');
   }
@@ -203,35 +208,6 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     } catch (_) {}
   }
 
-  Widget _buildFloatingDrawerButton({bool dark = false}) {
-    return InkWell(
-      onTap: () {
-        HapticFeedback.lightImpact();
-        _scaffoldKey.currentState?.openDrawer();
-      },
-      borderRadius: BorderRadius.circular(20),
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: dark ? AppTheme.royalBlue : Colors.white,
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: dark ? AppTheme.brightYellow : AppTheme.royalBlue,
-            width: 1.5,
-          ),
-          boxShadow: const [
-            BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, 2)),
-          ],
-        ),
-        child: Icon(
-          Icons.menu_rounded,
-          size: 20,
-          color: dark ? Colors.white : AppTheme.royalBlue,
-        ),
-      ),
-    );
-  }
-
   Widget _buildCurrentBody({
     required BuildContext context,
     required List<Widget> screens,
@@ -240,30 +216,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }) {
     switch (_currentRole) {
       case AppRole.queueDisplay:
-        return Stack(
-          children: [
-            QueueDisplayScreen(transactions: transactions),
-            Positioned(
-              top: 10,
-              left: 14,
-              child: SafeArea(
-                child: _buildFloatingDrawerButton(dark: true),
-              ),
-            ),
-          ],
+        return QueueDisplayScreen(
+          transactions: transactions,
+          onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
         );
       case AppRole.kitchenDisplay:
-        return Stack(
-          children: [
-            KitchenScreen(transactions: transactions),
-            Positioned(
-              top: 10,
-              left: 14,
-              child: SafeArea(
-                child: _buildFloatingDrawerButton(dark: false),
-              ),
-            ),
-          ],
+        return KitchenScreen(
+          transactions: transactions,
+          onOpenDrawer: () => _scaffoldKey.currentState?.openDrawer(),
         );
       case AppRole.customer:
         return CustomerRoleScreen(

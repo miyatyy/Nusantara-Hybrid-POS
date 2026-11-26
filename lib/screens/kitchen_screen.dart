@@ -18,10 +18,12 @@ import 'customer_order_tracker_screen.dart';
 /// Offline LAN Discovery: Discovers Master Cashier IP (port 8765) during blackouts.
 class KitchenScreen extends StatefulWidget {
   final List<PosTransaction> transactions;
+  final VoidCallback? onOpenDrawer;
 
   const KitchenScreen({
     super.key,
     required this.transactions,
+    this.onOpenDrawer,
   });
 
   @override
@@ -179,6 +181,16 @@ class _KitchenScreenState extends State<KitchenScreen> {
       ),
       child: Row(
         children: [
+          if (widget.onOpenDrawer != null) ...[
+            IconButton(
+              icon: const Icon(Icons.menu_rounded, color: AppTheme.royalBlue, size: 22),
+              tooltip: 'Navigation Menu',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
+              onPressed: widget.onOpenDrawer,
+            ),
+            const SizedBox(width: 4),
+          ],
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(

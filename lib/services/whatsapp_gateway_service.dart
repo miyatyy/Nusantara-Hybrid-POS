@@ -102,9 +102,9 @@ class WhatsAppGatewayService extends ChangeNotifier {
   static const String _kOfflineWaOutbox = 'offline_wa_outbox_json';
 
   WhatsAppProvider _provider = WhatsAppProvider.fonnte;
-  String _fonnteToken = 'DEMO_FONNTE_TOKEN_NUSANTARA';
-  String _wabaToken = '';
-  String _wabaPhoneId = '';
+  String _fonnteToken = const String.fromEnvironment('FONNTE_TOKEN', defaultValue: '');
+  String _wabaToken = const String.fromEnvironment('WABA_ACCESS_TOKEN', defaultValue: '');
+  String _wabaPhoneId = const String.fromEnvironment('WABA_PHONE_ID', defaultValue: '');
   bool _autoSendReceipt = true;
   bool _autoSendReady = true;
   String _lastError = '';
@@ -120,9 +120,7 @@ class WhatsAppGatewayService extends ChangeNotifier {
   String get lastError => _lastError;
   bool get hasConfiguredGateway =>
       (_provider == WhatsAppProvider.wabaOfficial && _wabaToken.isNotEmpty && _wabaPhoneId.isNotEmpty) ||
-      (_provider == WhatsAppProvider.fonnte &&
-          _fonnteToken.isNotEmpty &&
-          _fonnteToken != 'DEMO_FONNTE_TOKEN_NUSANTARA');
+      (_provider == WhatsAppProvider.fonnte && _fonnteToken.isNotEmpty);
   List<WhatsAppMessagePayload> get outbox => List.unmodifiable(_outbox);
 
   Future<void> init() async {
@@ -721,7 +719,7 @@ Please proceed to the pickup counter and simply show or mention your *Queue Numb
 
   /// Checks Fonnte device connection status via `POST https://api.fonnte.com/device`.
   Future<FonnteDeviceStatus> getFonnteDeviceStatus() async {
-    if (_fonnteToken.isEmpty || _fonnteToken == 'DEMO_FONNTE_TOKEN_NUSANTARA') {
+    if (_fonnteToken.isEmpty) {
       return const FonnteDeviceStatus(
         success: false,
         isConnected: false,
@@ -779,7 +777,7 @@ Please proceed to the pickup counter and simply show or mention your *Queue Numb
     required String type,
     String whatsapp = '',
   }) async {
-    if (_fonnteToken.isEmpty || _fonnteToken == 'DEMO_FONNTE_TOKEN_NUSANTARA') {
+    if (_fonnteToken.isEmpty) {
       return const FonntePairingResult(
         success: false,
         message: 'Please enter and save a valid Fonnte Device Token first.',
@@ -854,7 +852,7 @@ Please proceed to the pickup counter and simply show or mention your *Queue Numb
 
   /// Disconnects the currently paired Fonnte WhatsApp session (`POST https://api.fonnte.com/disconnect`).
   Future<bool> disconnectFonnteDevice() async {
-    if (_fonnteToken.isEmpty || _fonnteToken == 'DEMO_FONNTE_TOKEN_NUSANTARA') {
+    if (_fonnteToken.isEmpty) {
       return false;
     }
     try {
