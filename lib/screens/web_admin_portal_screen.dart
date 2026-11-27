@@ -512,7 +512,7 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
               OutlinedButton.icon(
                 onPressed: () => _inspectTenantDatabase(tid, storeName, email),
                 icon: const Icon(Icons.storage_rounded, size: 15),
-                label: const Text('Cek Data DB', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                label: const Text('Live DB Explorer', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
               ),
               DropdownButton<String>(
                 value: ['TRIAL', 'PRO', 'ENTERPRISE'].contains(plan) ? plan : 'PRO',
@@ -554,53 +554,13 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
   }
 
   Future<void> _inspectTenantDatabase(String tid, String storeName, String email) async {
-    final tenantRef = FirebaseFirestore.instance.collection('tenants').doc(tid);
-    final results = await Future.wait([
-      tenantRef.collection('menu_items').get(),
-      tenantRef.collection('transactions').get(),
-      tenantRef.collection('customers').get(),
-      tenantRef.collection('raw_materials').get(),
-    ]);
-
     if (!mounted) return;
-    showDialog(
+    await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Database Summary: $storeName', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Owner Email: $email', style: const TextStyle(fontSize: 12, color: AppTheme.royalBlue, fontWeight: FontWeight.bold)),
-            Text('Firestore Path: /tenants/$tid/...', style: const TextStyle(fontSize: 11, fontFamily: 'monospace', color: AppTheme.slateMuted)),
-            const Divider(height: 20),
-            _dbStatRow('Menu & Bundles', '${results[0].docs.length} items'),
-            _dbStatRow('Transaction History', '${results[1].docs.length} orders'),
-            _dbStatRow('Customer Directory', '${results[2].docs.length} customers'),
-            _dbStatRow('Raw Materials Stock', '${results[3].docs.length} materials'),
-          ],
-        ),
-        actions: [
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: ElevatedButton.styleFrom(backgroundColor: AppTheme.royalBlue, foregroundColor: Colors.white),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _dbStatRow(String label, String val) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          Text(val, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: AppTheme.royalBlue)),
-        ],
+      builder: (ctx) => _TenantLiveDbDialog(
+        tenantId: tid,
+        storeName: storeName,
+        ownerEmail: email,
       ),
     );
   }
@@ -717,5 +677,290 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
     if (confirm == true) {
       await FirebaseFirestore.instance.collection('tenants').doc(tid).delete();
     }
+  }
+}
+
+class _TenantLiveDbDialog extends StatefulWidget {
+  final String tenantId;
+  final String storeName;
+  final String ownerEmail;
+
+  const _TenantLiveDbDialog({
+    required this.tenantId,
+    required this.storeName,
+    required this.ownerEmail,
+  });
+
+  @override
+  State<_TenantLiveDbDialog> createState() => _TenantLiveDbDialogState();
+}
+
+class _TenantLiveDbDialogState extends State<_TenantLiveDbDialog> {
+  static const List<Map<String, String>> _collections = [
+    {'key': 'transactions', 'label': 'Orders & Sales'},
+    {'key': 'menu_items', 'label': 'Menu & Bundles'},
+    {'key': 'customers', 'label': 'Customers'},
+    {'key': 'raw_materials', 'label': 'Raw Materials'},
+    {'key': 'expenses', 'label': 'Expenses'},
+    {'key': 'z_reports', 'label': 'Z-Reports'},
+    {'key': 'wa_logs', 'label': 'WhatsApp Logs'},
+  ];
+
+  String _selectedCollection = 'transactions';
+
+  DocumentReference<Map<String, dynamic>> get _tenantRef =>
+      FirebaseFirestore.instance.collection('tenants').doc(widget.tenantId);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 780, maxHeight: 620),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Live Database Explorer: ${widget.storeName}',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: AppTheme.darkNavy,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${widget.ownerEmail} • /tenants/${widget.tenantId}/$_selectedCollection',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            color: AppTheme.slateMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFDCFCE7),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.sensors_rounded, size: 14, color: Color(0xFF15803D)),
+                        SizedBox(width: 4),
+                        Text(
+                          'LIVE SYNC',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              // Real-time collection selector chips with live counts
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _collections.map((col) {
+                    final key = col['key']!;
+                    final label = col['label']!;
+                    final isSelected = _selectedCollection == key;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                        stream: _tenantRef.collection(key).snapshots(),
+                        builder: (context, snap) {
+                          final count = snap.data?.docs.length ?? 0;
+                          return ChoiceChip(
+                            label: Text('$label ($count)'),
+                            selected: isSelected,
+                            selectedColor: AppTheme.royalBlue,
+                            labelStyle: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.white : AppTheme.darkNavy,
+                            ),
+                            onSelected: (_) => setState(() => _selectedCollection = key),
+                          );
+                        },
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+              const Divider(height: 20),
+
+              // Live records stream for the selected collection
+              Expanded(
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _tenantRef.collection(_selectedCollection).snapshots(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: AppTheme.royalBlue),
+                      );
+                    }
+                    final docs = snapshot.data?.docs ?? [];
+                    if (docs.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'No live records in "$_selectedCollection" yet.',
+                          style: const TextStyle(fontSize: 13, color: AppTheme.slateMuted),
+                        ),
+                      );
+                    }
+
+                    final sorted = List<QueryDocumentSnapshot<Map<String, dynamic>>>.from(docs);
+                    sorted.sort((a, b) {
+                      final ta = (a.data()['timestamp'] ?? a.data()['createdAt'] ?? a.data()['lastOrderAt'] ?? '').toString();
+                      final tb = (b.data()['timestamp'] ?? b.data()['createdAt'] ?? b.data()['lastOrderAt'] ?? '').toString();
+                      return tb.compareTo(ta);
+                    });
+
+                    return ListView.separated(
+                      itemCount: sorted.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (context, idx) {
+                        final doc = sorted[idx];
+                        return _buildRecordCard(doc.id, doc.data());
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.royalBlue,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecordCard(String docId, Map<String, dynamic> data) {
+    String title = docId;
+    String subtitle = '';
+    String badge = '';
+    Color badgeColor = AppTheme.royalBlue;
+
+    switch (_selectedCollection) {
+      case 'transactions':
+        final q = data['queueNumber'] ?? '-';
+        final cust = data['customerName'] ?? 'Customer';
+        final phone = (data['customerPhone'] ?? '').toString();
+        final total = (data['total'] as num?)?.toInt() ?? 0;
+        final method = data['paymentMethod'] ?? 'Cash';
+        final status = (data['kitchenStatus'] ?? 'preparing').toString().toUpperCase();
+        title = '$q • $cust${phone.isNotEmpty ? " ($phone)" : ""}';
+        subtitle = 'Rp $total • $method • ${data['timestamp'] ?? ''}';
+        badge = status;
+        badgeColor = status == 'READY' ? const Color(0xFF15803D) : const Color(0xFFD97706);
+        break;
+      case 'menu_items':
+        title = (data['name'] ?? docId).toString();
+        subtitle = 'Category: ${data['category'] ?? '-'} • Price: Rp ${(data['price'] as num?)?.toInt() ?? 0}';
+        badge = (data['isAvailable'] == false) ? 'SOLD OUT' : 'READY';
+        badgeColor = (data['isAvailable'] == false) ? AppTheme.roseRed : const Color(0xFF15803D);
+        break;
+      case 'customers':
+        title = '${data['name'] ?? 'Customer'} (${data['phone'] ?? docId})';
+        subtitle = 'Orders: ${data['totalOrders'] ?? 0} • Total Spend: Rp ${(data['totalSpend'] as num?)?.toInt() ?? 0}';
+        badge = 'CRM';
+        break;
+      case 'raw_materials':
+        final stock = (data['currentStock'] as num?)?.toDouble() ?? 0;
+        final min = (data['minThreshold'] ?? data['minSafetyStock'] ?? 0) as num;
+        title = (data['name'] ?? docId).toString();
+        subtitle = 'Stock: $stock ${data['unit'] ?? ''} • Min: $min';
+        badge = stock <= min ? 'LOW' : 'OK';
+        badgeColor = stock <= min ? AppTheme.roseRed : const Color(0xFF15803D);
+        break;
+      case 'expenses':
+        title = (data['title'] ?? data['category'] ?? docId).toString();
+        subtitle = 'Rp ${(data['amount'] as num?)?.toInt() ?? 0} • ${data['timestamp'] ?? ''}';
+        badge = (data['category'] ?? 'EXPENSE').toString().toUpperCase();
+        break;
+      case 'z_reports':
+        title = 'Shift ${data['shiftLabel'] ?? docId} (${data['cashierName'] ?? '-'})';
+        subtitle = 'Gross: Rp ${(data['grossSales'] as num?)?.toInt() ?? 0} • Orders: ${data['totalOrders'] ?? 0}';
+        badge = 'Z-REPORT';
+        break;
+      case 'wa_logs':
+        title = '${data['queueNumber'] ?? '-'} -> ${data['phone'] ?? '-'}';
+        subtitle = 'Stage: ${data['status'] ?? '-'} • ${data['timestamp'] ?? ''}';
+        final sent = data['sent'] == true;
+        badge = sent ? 'SENT' : 'QUEUED';
+        badgeColor = sent ? const Color(0xFF15803D) : AppTheme.roseRed;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppTheme.cardBorder),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: AppTheme.darkNavy),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(fontSize: 11, color: AppTheme.slateMuted),
+                ),
+              ],
+            ),
+          ),
+          if (badge.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: badgeColor.withAlpha(25),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                badge,
+                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: badgeColor),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
