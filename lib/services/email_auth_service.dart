@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
@@ -42,6 +43,23 @@ class EmailAuthService extends ChangeNotifier {
   String? _pendingOtpCode;
   DateTime? _pendingOtpExpiry;
   bool _initialized = false;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _tenantSub;
+
+  String _accountStatus = 'ACTIVE';
+  bool _allowAi = true;
+  bool _allowWhatsApp = true;
+  bool _allowKitchen = true;
+  bool _allowQueue = true;
+  bool _allowCloudBackup = true;
+  int _maxOrdersPerDay = 0;
+
+  bool get isAccountSuspended => _accountStatus == 'SUSPENDED';
+  bool get allowAi => _allowAi;
+  bool get allowWhatsApp => _allowWhatsApp;
+  bool get allowKitchen => _allowKitchen;
+  bool get allowQueue => _allowQueue;
+  bool get allowCloudBackup => _allowCloudBackup;
+  int get maxOrdersPerDay => _maxOrdersPerDay;
 
   String get loggedInEmail => _loggedInEmail;
   String get loggedInName => _loggedInName;
@@ -80,6 +98,13 @@ class EmailAuthService extends ChangeNotifier {
         _senderEmail = savedSender.trim();
       }
       _gmailAppPassword = prefs.getString(_kGmailAppPassword) ?? '';
+      if (isLoggedIn) {
+        _startListeningTenantLimits();
+        final savedStore = prefs.getString('settings_store_name')?.trim() ?? '';
+        if (savedStore.isNotEmpty) {
+          syncStoreNameToTenant(savedStore);
+        }
+      }
       notifyListeners();
     } catch (e) {
       debugPrint('[EmailAuthService] Init error: $e');
@@ -186,10 +211,13 @@ class EmailAuthService extends ChangeNotifier {
     _pendingOtpEmail = null;
     _pendingOtpExpiry = null;
 
+    String activeStoreName = 'Nusantara POS Café';
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kLoggedInEmail, _loggedInEmail);
       await prefs.setString(_kLoggedInName, _loggedInName);
+      final savedStore = prefs.getString('settings_store_name')?.trim() ?? '';
+      if (savedStore.isNotEmpty) activeStoreName = savedStore;
     } catch (_) {}
 
     // Register/update tenant metadata in Cloud Firestore for Web Admin Management Portal
@@ -202,26 +230,78 @@ class EmailAuthService extends ChangeNotifier {
           'tenantId': tenantId,
           'ownerEmail': _loggedInEmail,
           'ownerName': _loggedInName,
-          'storeName': 'Toko $_loggedInName',
+          'storeName': activeStoreName,
           'status': 'ACTIVE',
           'plan': 'PRO',
+          'limits': {
+            'allowAi': true,
+            'allowWhatsApp': true,
+            'allowKitchen': true,
+            'allowQueue': true,
+            'allowCloudBackup': true,
+            'maxOrdersPerDay': 0,
+          },
           'createdAt': nowIso,
           'lastActiveAt': nowIso,
         });
       } else {
+        final existingStore = (snap.data()?['storeName'] ?? '').toString().trim();
+        final shouldReplaceStore = existingStore.isEmpty || existingStore.startsWith('Toko ');
         await docRef.set({
           'ownerEmail': _loggedInEmail,
           'ownerName': _loggedInName,
+          if (shouldReplaceStore) 'storeName': activeStoreName,
           'lastActiveAt': nowIso,
         }, SetOptions(merge: true));
       }
+      _startListeningTenantLimits();
     } catch (_) {}
 
     notifyListeners();
     return true;
   }
 
+  /// Syncs the real store name from APK Settings to `tenants/{tenantId}` in Firestore.
+  Future<void> syncStoreNameToTenant(String storeName) async {
+    if (!isLoggedIn || storeName.trim().isEmpty) return;
+    try {
+      await FirebaseFirestore.instance.collection('tenants').doc(tenantId).set({
+        'storeName': storeName.trim(),
+        'ownerEmail': _loggedInEmail,
+        'ownerName': _loggedInName,
+        'lastActiveAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true)).timeout(const Duration(seconds: 4));
+    } catch (_) {}
+  }
+
+  void _startListeningTenantLimits() {
+    _tenantSub?.cancel();
+    if (!isLoggedIn) return;
+    try {
+      _tenantSub = FirebaseFirestore.instance
+          .collection('tenants')
+          .doc(tenantId)
+          .snapshots()
+          .listen((doc) {
+        if (!doc.exists || doc.data() == null) return;
+        final data = doc.data()!;
+        _accountStatus = (data['status'] ?? 'ACTIVE').toString();
+        final limits = data['limits'] as Map<String, dynamic>? ?? {};
+        _allowAi = limits['allowAi'] != false;
+        _allowWhatsApp = limits['allowWhatsApp'] != false;
+        _allowKitchen = limits['allowKitchen'] != false;
+        _allowQueue = limits['allowQueue'] != false;
+        _allowCloudBackup = limits['allowCloudBackup'] != false;
+        _maxOrdersPerDay = (limits['maxOrdersPerDay'] as num?)?.toInt() ?? 0;
+        notifyListeners();
+      }, onError: (_) {});
+    } catch (_) {}
+  }
+
   Future<void> logout() async {
+    await _tenantSub?.cancel();
+    _tenantSub = null;
+    _accountStatus = 'ACTIVE';
     _loggedInEmail = '';
     _loggedInName = '';
     try {

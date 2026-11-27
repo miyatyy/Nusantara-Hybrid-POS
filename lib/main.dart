@@ -158,7 +158,56 @@ class NusantaraPosApp extends StatelessWidget {
                       queueNumber: deepLinkQueue,
                       initialEtaMinutes: deepLinkEta,
                     )
-                  : const MainNavigationScreen(),
+                  : ListenableBuilder(
+                      listenable: EmailAuthService(),
+                      builder: (context, _) {
+                        if (EmailAuthService().isLoggedIn && EmailAuthService().isAccountSuspended) {
+                          return Scaffold(
+                            backgroundColor: AppTheme.iceBlueScaffold,
+                            body: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Container(
+                                  constraints: const BoxConstraints(maxWidth: 400),
+                                  padding: const EdgeInsets.all(24),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: AppTheme.roseRed.withAlpha(80)),
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.block_rounded, size: 48, color: AppTheme.roseRed),
+                                      const SizedBox(height: 12),
+                                      const Text(
+                                        'Account Suspended by Admin',
+                                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: AppTheme.darkNavy),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Text(
+                                        'Account ${EmailAuthService().loggedInEmail} has been temporarily suspended by the Super Admin. Please contact your administrator.',
+                                        style: const TextStyle(fontSize: 12, color: AppTheme.slateMuted),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                      const SizedBox(height: 18),
+                                      ElevatedButton.icon(
+                                        onPressed: () => EmailAuthService().logout(),
+                                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.royalBlue, foregroundColor: Colors.white),
+                                        icon: const Icon(Icons.logout_rounded, size: 16),
+                                        label: const Text('Sign Out'),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }
+                        return const MainNavigationScreen();
+                      },
+                    ),
         );
       },
     );

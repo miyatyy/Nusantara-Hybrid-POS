@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'email_auth_service.dart';
 
 class SettingsService extends ChangeNotifier {
   static final SettingsService _instance = SettingsService._internal();
@@ -180,6 +181,9 @@ class SettingsService extends ChangeNotifier {
         'serviceChargeRate': _serviceChargeRate,
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true)).catchError((_) {});
+
+      // Sync real store name to tenant record in Web Admin Portal
+      EmailAuthService().syncStoreNameToTenant(_storeName);
     } catch (_) {}
   }
 

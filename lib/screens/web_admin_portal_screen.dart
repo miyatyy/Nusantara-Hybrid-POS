@@ -511,8 +511,13 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
             children: [
               OutlinedButton.icon(
                 onPressed: () => _inspectTenantDatabase(tid, storeName, email),
-                icon: const Icon(Icons.storage_rounded, size: 15),
-                label: const Text('Live DB Explorer', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                icon: const Icon(Icons.analytics_rounded, size: 15),
+                label: const Text('Activity & Live DB', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+              ),
+              OutlinedButton.icon(
+                onPressed: () => _showTenantLimitsDialog(tid, storeName, t['limits'] as Map<String, dynamic>? ?? {}),
+                icon: const Icon(Icons.tune_rounded, size: 15, color: Color(0xFFD97706)),
+                label: const Text('Limits', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: Color(0xFFD97706))),
               ),
               DropdownButton<String>(
                 value: ['TRIAL', 'PRO', 'ENTERPRISE'].contains(plan) ? plan : 'PRO',
@@ -549,6 +554,99 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
             ],
           ),
         ],
+      ),
+    );
+  }
+
+  Future<void> _showTenantLimitsDialog(
+    String tid,
+    String storeName,
+    Map<String, dynamic> currentLimits,
+  ) async {
+    bool allowAi = currentLimits['allowAi'] != false;
+    bool allowWhatsApp = currentLimits['allowWhatsApp'] != false;
+    bool allowKitchen = currentLimits['allowKitchen'] != false;
+    bool allowQueue = currentLimits['allowQueue'] != false;
+    bool allowCloudBackup = currentLimits['allowCloudBackup'] != false;
+    final maxOrdersCtrl = TextEditingController(
+      text: ((currentLimits['maxOrdersPerDay'] as num?)?.toInt() ?? 0).toString(),
+    );
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text('System Limits: $storeName', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('Allow AI Smart Order & Insights', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  value: allowAi,
+                  onChanged: (v) => setDlgState(() => allowAi = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('Allow WhatsApp Automation (Fonnte)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  value: allowWhatsApp,
+                  onChanged: (v) => setDlgState(() => allowWhatsApp = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('Allow Kitchen Display (KDS)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  value: allowKitchen,
+                  onChanged: (v) => setDlgState(() => allowKitchen = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('Allow Queue Display (TV)', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  value: allowQueue,
+                  onChanged: (v) => setDlgState(() => allowQueue = v),
+                ),
+                SwitchListTile(
+                  dense: true,
+                  title: const Text('Allow Firebase Cloud Backup', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
+                  value: allowCloudBackup,
+                  onChanged: (v) => setDlgState(() => allowCloudBackup = v),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: maxOrdersCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Max Orders / Day (0 = Unlimited)',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              onPressed: () async {
+                final maxOrders = int.tryParse(maxOrdersCtrl.text.trim()) ?? 0;
+                await FirebaseFirestore.instance.collection('tenants').doc(tid).set({
+                  'limits': {
+                    'allowAi': allowAi,
+                    'allowWhatsApp': allowWhatsApp,
+                    'allowKitchen': allowKitchen,
+                    'allowQueue': allowQueue,
+                    'allowCloudBackup': allowCloudBackup,
+                    'maxOrdersPerDay': maxOrders,
+                  },
+                }, SetOptions(merge: true));
+                if (ctx.mounted) Navigator.pop(ctx);
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppTheme.royalBlue, foregroundColor: Colors.white),
+              child: const Text('Save Limits'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -697,6 +795,7 @@ class _TenantLiveDbDialog extends StatefulWidget {
 
 class _TenantLiveDbDialogState extends State<_TenantLiveDbDialog> {
   static const List<Map<String, String>> _collections = [
+    {'key': 'analytics_overview', 'label': 'Activity & Charts'},
     {'key': 'transactions', 'label': 'Orders & Sales'},
     {'key': 'menu_items', 'label': 'Menu & Bundles'},
     {'key': 'customers', 'label': 'Customers'},
@@ -706,7 +805,7 @@ class _TenantLiveDbDialogState extends State<_TenantLiveDbDialog> {
     {'key': 'wa_logs', 'label': 'WhatsApp Logs'},
   ];
 
-  String _selectedCollection = 'transactions';
+  String _selectedCollection = 'analytics_overview';
 
   DocumentReference<Map<String, dynamic>> get _tenantRef =>
       FirebaseFirestore.instance.collection('tenants').doc(widget.tenantId);
@@ -785,32 +884,46 @@ class _TenantLiveDbDialogState extends State<_TenantLiveDbDialog> {
                     final isSelected = _selectedCollection == key;
                     return Padding(
                       padding: const EdgeInsets.only(right: 8),
-                      child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                        stream: _tenantRef.collection(key).snapshots(),
-                        builder: (context, snap) {
-                          final count = snap.data?.docs.length ?? 0;
-                          return ChoiceChip(
-                            label: Text('$label ($count)'),
-                            selected: isSelected,
-                            selectedColor: AppTheme.royalBlue,
-                            labelStyle: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                              color: isSelected ? Colors.white : AppTheme.darkNavy,
+                      child: key == 'analytics_overview'
+                          ? ChoiceChip(
+                              label: Text(label),
+                              selected: isSelected,
+                              selectedColor: AppTheme.royalBlue,
+                              labelStyle: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: isSelected ? Colors.white : AppTheme.darkNavy,
+                              ),
+                              onSelected: (_) => setState(() => _selectedCollection = key),
+                            )
+                          : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                              stream: _tenantRef.collection(key).snapshots(),
+                              builder: (context, snap) {
+                                final count = snap.data?.docs.length ?? 0;
+                                return ChoiceChip(
+                                  label: Text('$label ($count)'),
+                                  selected: isSelected,
+                                  selectedColor: AppTheme.royalBlue,
+                                  labelStyle: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected ? Colors.white : AppTheme.darkNavy,
+                                  ),
+                                  onSelected: (_) => setState(() => _selectedCollection = key),
+                                );
+                              },
                             ),
-                            onSelected: (_) => setState(() => _selectedCollection = key),
-                          );
-                        },
-                      ),
                     );
                   }).toList(),
                 ),
               ),
               const Divider(height: 20),
 
-              // Live records stream for the selected collection
+              // Live records stream for the selected collection (or Activity & Charts)
               Expanded(
-                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                child: _selectedCollection == 'analytics_overview'
+                    ? _buildLiveActivityAndCharts()
+                    : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                   stream: _tenantRef.collection(_selectedCollection).snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
@@ -959,6 +1072,177 @@ class _TenantLiveDbDialogState extends State<_TenantLiveDbDialog> {
                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: badgeColor),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveActivityAndCharts() {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _tenantRef.collection('transactions').snapshots(),
+      builder: (context, txSnap) {
+        return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+          stream: _tenantRef.collection('wa_logs').snapshots(),
+          builder: (context, waSnap) {
+            return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _tenantRef.collection('z_reports').snapshots(),
+              builder: (context, zSnap) {
+                final txDocs = txSnap.data?.docs ?? [];
+                final waDocs = waSnap.data?.docs ?? [];
+                final zDocs = zSnap.data?.docs ?? [];
+
+                double totalRevenue = 0;
+                int aiOrders = 0;
+                int manualOrders = 0;
+                int cashOrders = 0;
+                int qrisCardOrders = 0;
+                int preparingCount = 0;
+                int cookingCount = 0;
+                int readyCount = 0;
+                int completedCount = 0;
+
+                for (final d in txDocs) {
+                  final data = d.data();
+                  totalRevenue += (data['total'] as num?)?.toDouble() ?? 0;
+                  final aiSrc = (data['aiSource'] ?? 'MANUAL').toString().toUpperCase();
+                  if (aiSrc == 'MANUAL') {
+                    manualOrders++;
+                  } else {
+                    aiOrders++;
+                  }
+                  final pay = (data['paymentMethod'] ?? 'Cash').toString().toLowerCase();
+                  if (pay.contains('cash') || pay.contains('tunai')) {
+                    cashOrders++;
+                  } else {
+                    qrisCardOrders++;
+                  }
+                  final ks = (data['kitchenStatus'] ?? 'preparing').toString().toLowerCase();
+                  if (ks == 'ready') {
+                    readyCount++;
+                  } else if (ks == 'cooking') {
+                    cookingCount++;
+                  } else if (ks == 'completed') {
+                    completedCount++;
+                  } else {
+                    preparingCount++;
+                  }
+                }
+
+                final int waSent = waDocs.where((d) => d.data()['sent'] == true).length;
+                final maxSys = [manualOrders, aiOrders, cookingCount + readyCount + completedCount, waSent, zDocs.length, 1]
+                    .reduce((a, b) => a > b ? a : b);
+
+                return SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: [
+                          _miniMetric('Total Revenue', 'Rp ${totalRevenue.toInt()}', const Color(0xFF15803D)),
+                          _miniMetric('Total Orders', '${txDocs.length}', AppTheme.royalBlue),
+                          _miniMetric('AI Orders', '$aiOrders', const Color(0xFF7C3AED)),
+                          _miniMetric('WA Alerts Sent', '$waSent / ${waDocs.length}', const Color(0xFF0284C7)),
+                          _miniMetric('Z-Reports', '${zDocs.length}', const Color(0xFFD97706)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Usage Chart per System Module (Real-Time)',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: AppTheme.darkNavy),
+                      ),
+                      const SizedBox(height: 8),
+                      _usageBar('POS Cashier (Manual)', manualOrders, maxSys, AppTheme.royalBlue),
+                      _usageBar('AI Smart Order', aiOrders, maxSys, const Color(0xFF7C3AED)),
+                      _usageBar('Kitchen KDS Active/Done', cookingCount + readyCount + completedCount, maxSys, const Color(0xFFD97706)),
+                      _usageBar('WhatsApp Automation', waSent, maxSys, const Color(0xFF15803D)),
+                      _usageBar('Shift Z-Reports', zDocs.length, maxSys, const Color(0xFF0284C7)),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _miniMetric('Cash vs Non-Cash', '$cashOrders Cash / $qrisCardOrders QRIS-Card', AppTheme.darkNavy),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _miniMetric('Kitchen Pipeline', '$preparingCount Prep • $cookingCount Cook • $readyCount Ready • $completedCount Done', const Color(0xFFB45309)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Recent Live Activity Stream',
+                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: AppTheme.darkNavy),
+                      ),
+                      const SizedBox(height: 8),
+                      if (txDocs.isEmpty && waDocs.isEmpty)
+                        const Text('No activity recorded yet.', style: TextStyle(fontSize: 12, color: AppTheme.slateMuted))
+                      else
+                        ...txDocs.take(5).map((d) {
+                          final m = d.data();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: _buildRecordCard(d.id, m),
+                          );
+                        }),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _miniMetric(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withAlpha(15),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withAlpha(50)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(label, style: const TextStyle(fontSize: 10, color: AppTheme.slateMuted, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 2),
+          Text(value, style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: color)),
+        ],
+      ),
+    );
+  }
+
+  Widget _usageBar(String label, int value, int maxVal, Color color) {
+    final ratio = maxVal > 0 ? (value / maxVal).clamp(0.0, 1.0) : 0.0;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 150,
+            child: Text(label, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: AppTheme.darkNavy)),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 10,
+                backgroundColor: const Color(0xFFE2E8F0),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 34,
+            child: Text('$value', textAlign: TextAlign.right, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: color)),
+          ),
         ],
       ),
     );
