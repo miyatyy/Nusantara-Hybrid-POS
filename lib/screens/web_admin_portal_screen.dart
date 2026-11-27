@@ -19,7 +19,7 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
   static const String _superAdminEmail = EmailAuthService.defaultSenderEmail;
   static const String _defaultAdminPin = '123456';
 
-  final TextEditingController _emailCtrl = TextEditingController(text: _superAdminEmail);
+  final TextEditingController _emailCtrl = TextEditingController();
   final TextEditingController _pinCtrl = TextEditingController();
   final TextEditingController _searchCtrl = TextEditingController();
 
@@ -37,15 +37,12 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
 
   void _handleAdminLogin() {
     HapticFeedback.lightImpact();
-    final email = _emailCtrl.text.trim().toLowerCase();
+    final input = _emailCtrl.text.trim().toLowerCase();
     final pin = _pinCtrl.text.trim();
 
-    if (email != _superAdminEmail.toLowerCase()) {
-      setState(() => _loginError = 'Hanya email Super Admin ($_superAdminEmail) yang diizinkan.');
-      return;
-    }
-    if (pin != _defaultAdminPin) {
-      setState(() => _loginError = 'PIN Admin salah (default: $_defaultAdminPin).');
+    final isValidAccount = input == 'mnurmiyaty2' || input == _superAdminEmail.toLowerCase();
+    if (!isValidAccount || pin != _defaultAdminPin) {
+      setState(() => _loginError = 'Invalid Super Admin username/email or PIN.');
       return;
     }
 
@@ -122,18 +119,19 @@ class _WebAdminPortalScreenState extends State<WebAdminPortalScreen> {
                     ),
                   ),
                   const SizedBox(height: 22),
-                  const Text('Super Admin Email', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.darkNavy)),
+                  const Text('Super Admin Username / Email', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.darkNavy)),
                   const SizedBox(height: 6),
                   TextField(
                     controller: _emailCtrl,
                     decoration: InputDecoration(
+                      hintText: 'Enter admin username or email',
                       prefixIcon: const Icon(Icons.verified_user_rounded, size: 18, color: AppTheme.royalBlue),
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                       isDense: true,
                     ),
                   ),
                   const SizedBox(height: 14),
-                  const Text('Web Admin Access PIN (Default: 123456)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.darkNavy)),
+                  const Text('Web Admin Access PIN', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppTheme.darkNavy)),
                   const SizedBox(height: 6),
                   TextField(
                     controller: _pinCtrl,
